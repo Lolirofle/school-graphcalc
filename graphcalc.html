@@ -1,0 +1,140 @@
+<html>
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+
+	<script id="fragmentShader" type="x-shader/x-fragment">
+		//attribute vec4 vertexColor;//TODO: This doesn't work? Should make colors functional
+
+		void main(void){
+			gl_FragColor = vec4(1,1,1,1);//vertexColor;
+		}
+	</script>
+
+	<script id="vertexShader" type="x-shader/x-vertex">
+		attribute vec3 vertexPos;
+
+		uniform mat4 modelViewMatrix;
+		uniform mat4 projectionMatrix;
+
+		void main(void){
+			gl_Position = projectionMatrix * modelViewMatrix * vec4(vertexPos,1.0);
+		}
+	</script>
+
+	<script type="text/javascript" src="lib/PhiloGL.min.js"></script>
+	<script type="text/javascript">
+	function initGraph(){
+		if(!PhiloGL.hasWebGL())
+			return;
+
+		var translateBegin = {x:0,y:0};
+		var app = PhiloGL('graphcalc',{
+			program: {
+				from: 'ids',
+				vs:   'vertexShader',
+				fs:   'fragmentShader'
+			},
+			onError: function(){
+				console.log("Error while initializing WebGL");
+			},
+			onLoad: function(app){
+				var gl      = app.gl,
+				    canvas  = app.canvas,
+				    program = app.program,
+				    camera  = app.camera;
+
+				app.canvas.width  = window.innerWidth;
+				app.canvas.height = window.innerHeight;
+				gl.viewport(0,0,app.canvas.width,app.canvas.height);
+				gl.clearColor(0,0,0,1);
+
+				program.setBuffers({
+					'linePlot': {
+						attribute: 'vertexPos',
+						value: new Float32Array([
+							0.0,0.0,0,
+							1.0,1.0,0,
+							1.5,1.0,0,
+							4.0,1.5,0
+						]),
+						size: 3
+					},
+
+					'linePlotColors': {
+						attribute: 'vertexColor',
+						value: new Float32Array([
+							1.0,1.0,1.0,0.5,
+						]),
+						size: 4
+					},
+				});
+
+				gl.clear(gl.COLOR_BUFFER_BIT);
+				camera.view.id();
+				camera.view.$translate(0,0,-7);
+
+				//Draw plot
+				program.setUniform('modelViewMatrix',camera.view);
+				program.setUniform('projectionMatrix',camera.projection);
+				program.setBuffer('linePlot');
+				program.setBuffer('linePlotColors');
+				gl.drawArrays(gl.LINE_STRIP,0,4);
+
+				//Remove the fallback element because everything seems to be okay
+				var elem = document.getElementById('fallback');
+				elem.parentNode.removeChild(elem);
+			},
+			events: {
+				disableContextMenu: true,
+				onDragStart: function(event){
+					translateBegin = {
+						x: event.event.clientX,
+						y: event.event.clientY
+					};
+				},
+				onDragMove: function(event){
+					var gl      = this.gl,
+					    canvas  = this.canvas,
+					    program = this.program,
+					    camera  = this.camera;
+
+					gl.clear(gl.COLOR_BUFFER_BIT);
+					camera.view.id();
+					var x = (event.event.clientX-translateBegin.x)/100;
+					var y = -(event.event.clientY-translateBegin.y)/100;
+					camera.view.$translate(x,y,-7);
+
+					//Draw plot
+					program.setUniform('modelViewMatrix' ,camera.view);
+					program.setUniform('projectionMatrix',camera.projection);
+					program.setBuffer('linePlot');
+					program.setBuffer('linePlotColors');
+					gl.drawArrays(gl.LINE_STRIP,0,4);
+				},
+				onMouseWheel: function(event){
+					console.log(event);
+				}
+			}
+		});
+	}
+	</script>
+
+	<style type="text/css">
+	body{
+		margin:0;
+	}
+
+	#graphcalc{
+		position:absolute;
+		width:100%;
+		height:100%;
+	}
+	</style>
+
+</head>
+
+<body onload="initGraph();">
+	<div id="fallback">Failed to render with WebGL</div>
+	<canvas id="graphcalc"></canvas>
+</body>
+</html>
