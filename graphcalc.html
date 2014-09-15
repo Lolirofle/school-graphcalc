@@ -2,22 +2,38 @@
 <head>
 	<meta http-equiv="content-type" content="text/html; charset=UTF-8">
 
-	<script id="fragmentShader" type="x-shader/x-fragment">
-		//attribute vec4 vertexColor;//TODO: This doesn't work? Should make colors functional
-
+	<script id="lineLinearPlotFragmentShader" type="x-shader/x-fragment">
 		void main(void){
-			gl_FragColor = vec4(1,1,1,1);//vertexColor;
+			gl_FragColor = vec4(0,0,0,1);//vertexColor;
 		}
 	</script>
 
-	<script id="vertexShader" type="x-shader/x-vertex">
+	<script id="lineLinearPlotVertexShader" type="x-shader/x-vertex">
 		attribute vec3 vertexPos;
 
 		uniform mat4 modelViewMatrix;
 		uniform mat4 projectionMatrix;
 
 		void main(void){
+			//vertexColor_ = vertexColor;
 			gl_Position = projectionMatrix * modelViewMatrix * vec4(vertexPos,1.0);
+		}
+	</script>
+
+	<script id="lineFragmentShader" type="x-shader/x-fragment">
+		void main(void){
+			gl_FragColor = vec4(0,0,0,0.15);
+		}
+	</script>
+
+	<script id="lineVertexShader" type="x-shader/x-vertex">
+		attribute vec4 vertexPos;
+
+		uniform mat4 modelViewMatrix;
+		uniform mat4 projectionMatrix;
+
+		void main(void){
+			gl_Position = projectionMatrix * modelViewMatrix * vertexPos;
 		}
 	</script>
 
@@ -27,58 +43,97 @@
 		if(!PhiloGL.hasWebGL())
 			return;
 
-		var translateBegin = {x:0,y:0};
+		var userData = {
+			render: null,
+			translate: {x:0,y:0,z:-1},
+			dragPrevious: {x:0,y:0},
+		};
+
 		var app = PhiloGL('graphcalc',{
-			program: {
-				from: 'ids',
-				vs:   'vertexShader',
-				fs:   'fragmentShader'
-			},
+			program: [
+				{
+					id: 'lineLinearPlot',
+					from: 'ids',
+					vs: 'lineLinearPlotVertexShader',
+					fs: 'lineLinearPlotFragmentShader'
+				},
+				{
+					id: 'line',
+					from: 'ids',
+					vs: 'lineVertexShader',
+					fs: 'lineFragmentShader'
+				},
+			],
 			onError: function(){
 				console.log("Error while initializing WebGL");
 			},
 			onLoad: function(app){
 				var gl      = app.gl,
 				    canvas  = app.canvas,
-				    program = app.program,
-				    camera  = app.camera;
+				    camera  = app.camera,
+				    lineLinearPlotShaderProgram = app.program.lineLinearPlot,
+				    lineShaderProgram     = app.program.line;
 
 				app.canvas.width  = window.innerWidth;
 				app.canvas.height = window.innerHeight;
 				gl.viewport(0,0,app.canvas.width,app.canvas.height);
-				gl.clearColor(0,0,0,1);
+				gl.clearColor(1,1,1,1);
 
-				program.setBuffers({
-					'linePlot': {
+				lineLinearPlotShaderProgram.setBuffers({
+					'lineLinearPlot': {
 						attribute: 'vertexPos',
 						value: new Float32Array([
-							0.0,0.0,0,
-							1.0,1.0,0,
-							1.5,1.0,0,
-							4.0,1.5,0
+							0.0, 0.0, 0,
+							1.0, 1.0, 0,
+							1.5, 1.0, 0,
+							4.0, 1.5, 0
 						]),
 						size: 3
 					},
 
-					'linePlotColors': {
-						attribute: 'vertexColor',
+					'lineX': {
+						attribute: 'vertexPos',
 						value: new Float32Array([
-							1.0,1.0,1.0,0.5,
+							//+x
+							 0.0, 0.0, 0.0, 1.0,
+							 1.0, 0.0, 0.0, 0.0,
+
+							//-x
+							 0.0, 0.0, 0.0, 1.0,
+							-1.0, 0.0, 0.0, 0.0,
+
+							//+y
+							 0.0, 0.0, 0.0, 1.0,
+							 0.0, 1.0, 0.0, 0.0,
+
+							//-y
+							 0.0, 0.0, 0.0, 1.0,
+							 0.0,-1.0, 0.0, 0.0,
 						]),
 						size: 4
 					},
 				});
 
-				gl.clear(gl.COLOR_BUFFER_BIT);
-				camera.view.id();
-				camera.view.$translate(0,0,-7);
+				userData.render = function(){
+					gl.clear(gl.COLOR_BUFFER_BIT);
+					camera.view.id();
+					camera.view.$translate(userData.translate.x,userData.translate.y,userData.translate.z);
 
-				//Draw plot
-				program.setUniform('modelViewMatrix',camera.view);
-				program.setUniform('projectionMatrix',camera.projection);
-				program.setBuffer('linePlot');
-				program.setBuffer('linePlotColors');
-				gl.drawArrays(gl.LINE_STRIP,0,4);
+					//Draw plot
+					lineLinearPlotShaderProgram.use();
+					lineLinearPlotShaderProgram.setUniform('modelViewMatrix',camera.view);
+					lineLinearPlotShaderProgram.setUniform('projectionMatrix',camera.projection);
+					lineLinearPlotShaderProgram.setBuffer('lineLinearPlot');
+					gl.drawArrays(gl.LINE_STRIP,0,4);
+
+					//Draw x-line
+					lineShaderProgram.use();
+					lineShaderProgram.setUniform('modelViewMatrix',camera.view);
+					lineShaderProgram.setUniform('projectionMatrix',camera.projection);
+					lineShaderProgram.setBuffer('lineX');
+					gl.drawArrays(gl.LINES,0,8);
+				};
+				userData.render();
 
 				//Remove the fallback element because everything seems to be okay
 				var elem = document.getElementById('fallback');
@@ -87,32 +142,27 @@
 			events: {
 				disableContextMenu: true,
 				onDragStart: function(event){
-					translateBegin = {
-						x: event.event.clientX,
-						y: event.event.clientY
+					userData.dragPrevious = {
+						x: event.x,
+						y: event.y
 					};
 				},
 				onDragMove: function(event){
-					var gl      = this.gl,
-					    canvas  = this.canvas,
-					    program = this.program,
-					    camera  = this.camera;
+					userData.translate.x+=(event.x-userData.dragPrevious.x)/50;
+					userData.translate.y+=(event.y-userData.dragPrevious.y)/50;
 
-					gl.clear(gl.COLOR_BUFFER_BIT);
-					camera.view.id();
-					var x = (event.event.clientX-translateBegin.x)/100;
-					var y = -(event.event.clientY-translateBegin.y)/100;
-					camera.view.$translate(x,y,-7);
-
-					//Draw plot
-					program.setUniform('modelViewMatrix' ,camera.view);
-					program.setUniform('projectionMatrix',camera.projection);
-					program.setBuffer('linePlot');
-					program.setBuffer('linePlotColors');
-					gl.drawArrays(gl.LINE_STRIP,0,4);
+					userData.dragPrevious = {
+						x: event.x,
+						y: event.y
+					};
+					userData.render();
 				},
 				onMouseWheel: function(event){
-					console.log(event);
+					var newZ = userData.translate.z+event.wheel;
+					if(newZ<0){
+						userData.translate.z = newZ;
+						userData.render();
+					}
 				}
 			}
 		});
