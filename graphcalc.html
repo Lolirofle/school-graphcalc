@@ -9,13 +9,13 @@
 	</script>
 
 	<script id="lineLinearPlotVertexShader" type="x-shader/x-vertex">
-		attribute vec3 vertexPos;
+		attribute vec2 vertexPos;
 
 		uniform mat4 modelViewMatrix;
 		uniform mat4 projectionMatrix;
 
 		void main(void){
-			gl_Position = projectionMatrix * modelViewMatrix * vec4(vertexPos,1.0);
+			gl_Position = projectionMatrix * modelViewMatrix * vec4(vertexPos,0,1);
 		}
 	</script>
 
@@ -73,24 +73,42 @@
 				    lineLinearPlotShaderProgram = app.program.lineLinearPlot,
 				    lineShaderProgram     = app.program.line;
 
-				app.canvas.width  = window.innerWidth;
-				app.canvas.height = window.innerHeight;
-				gl.viewport(0,0,app.canvas.width,app.canvas.height);
+				var onResize = function(){
+					canvas.width  = window.innerWidth;
+					canvas.height = window.innerHeight;
+					gl.viewport(0,0,canvas.width,canvas.height);
+				};
+
+				onResize();
 				gl.clearColor(1,1,1,1);
 
-				lineLinearPlotShaderProgram.setBuffers({
-					'lineLinearPlot': {
-						attribute: 'vertexPos',
-						value: new Float32Array([
-							0.0, 0.0, 0,
-							1.0, 1.0, 0,
-							1.5, 1.0, 0,
-							4.0, 1.5, 0
-						]),
-						size: 3
-					},
+				//Generate vertices for the plots from equations (Contains values in 2d x,y pairs)
+				var plots = [];
+				plots.push({data:[]});
+				for(var x=-5.0; x<5.0; x+=0.5){
+					plots[0].data.push(x);
+					plots[0].data.push(Math.sin(x));
+				}
+				plots.push({data:[]});
+				for(var x=-5.0; x<5.0; x+=0.5){
+					plots[1].data.push(x);
+					plots[1].data.push(x*x);
+				}
 
-					'lineX': {
+				//Prepare buffers for the plots
+				var plotBuffers = {};
+				for(var i=plots.length-1; i>=0; i--){
+					plotBuffers['lineLinearPlot'+i] = {
+						attribute: 'vertexPos',
+						value: new Float32Array(plots[i].data),
+						size: 2
+					};
+				}
+				lineLinearPlotShaderProgram.setBuffers(plotBuffers);
+
+				//Line
+				lineLinearPlotShaderProgram.setBuffers({
+					'lines': {
 						attribute: 'vertexPos',
 						value: new Float32Array([
 							//+x
@@ -114,31 +132,34 @@
 				});
 
 				userData.render = function(){
+					//Clear previous render
 					gl.clear(gl.COLOR_BUFFER_BIT);
 					camera.view.id();
+
+					//Transformations (zoom and movement)
 					camera.view.$translate(userData.translate.x,userData.translate.y,userData.translate.z);
 
-					//Draw plot
+					//Draw plots
 					lineLinearPlotShaderProgram.use();
 					lineLinearPlotShaderProgram.setUniform('modelViewMatrix',camera.view);
 					lineLinearPlotShaderProgram.setUniform('projectionMatrix',camera.projection);
-					lineLinearPlotShaderProgram.setBuffer('lineLinearPlot');
-					gl.drawArrays(gl.LINE_STRIP,0,4);
+					for(var i=plots.length-1; i>=0; i--){
+						lineLinearPlotShaderProgram.setBuffer('lineLinearPlot'+i);
+						gl.drawArrays(gl.LINE_STRIP,0,plots[i].data.length/2);
+					}
 
 					//Draw lines
 					lineShaderProgram.use();
 					lineShaderProgram.setUniform('modelViewMatrix',camera.view);
 					lineShaderProgram.setUniform('projectionMatrix',camera.projection);
-					lineShaderProgram.setBuffer('lineX');
+					lineShaderProgram.setBuffer('lines');
 					gl.drawArrays(gl.LINES,0,8);
 				};
 				userData.render();
 
 				//Change viewport on resize of window
-				window.addEventListener('resize',function(event){
-					canvas.width  = window.innerWidth;
-					canvas.height = window.innerHeight;
-					gl.viewport(0,0,canvas.width,canvas.height);
+				window.addEventListener('resize',function(){
+					onResize();
 					userData.render();
 				});
 
@@ -148,12 +169,14 @@
 			},
 			events: {
 				disableContextMenu: true,
+				//Movement initialization
 				onDragStart: function(event){
 					userData.dragPrevious = {
 						x: event.x,
 						y: event.y
 					};
 				},
+				//Movement
 				onDragMove: function(event){
 					userData.translate.x+=(event.x-userData.dragPrevious.x)/50;
 					userData.translate.y+=(event.y-userData.dragPrevious.y)/50;
@@ -164,6 +187,7 @@
 					};
 					userData.render();
 				},
+				//Zoom
 				onMouseWheel: function(event){
 					var newZ = userData.translate.z+event.wheel;
 					if(newZ<0){
