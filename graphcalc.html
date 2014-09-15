@@ -4,7 +4,7 @@
 
 	<script id="lineLinearPlotFragmentShader" type="x-shader/x-fragment">
 		void main(void){
-			gl_FragColor = vec4(0,0,0,1);//vertexColor;
+			gl_FragColor = vec4(0,0,0,1);
 		}
 	</script>
 
@@ -15,7 +15,6 @@
 		uniform mat4 projectionMatrix;
 
 		void main(void){
-			//vertexColor_ = vertexColor;
 			gl_Position = projectionMatrix * modelViewMatrix * vec4(vertexPos,1.0);
 		}
 	</script>
@@ -126,7 +125,7 @@
 					lineLinearPlotShaderProgram.setBuffer('lineLinearPlot');
 					gl.drawArrays(gl.LINE_STRIP,0,4);
 
-					//Draw x-line
+					//Draw lines
 					lineShaderProgram.use();
 					lineShaderProgram.setUniform('modelViewMatrix',camera.view);
 					lineShaderProgram.setUniform('projectionMatrix',camera.projection);
@@ -134,6 +133,14 @@
 					gl.drawArrays(gl.LINES,0,8);
 				};
 				userData.render();
+
+				//Change viewport on resize of window
+				window.addEventListener('resize',function(event){
+					canvas.width  = window.innerWidth;
+					canvas.height = window.innerHeight;
+					gl.viewport(0,0,canvas.width,canvas.height);
+					userData.render();
+				});
 
 				//Remove the fallback element because everything seems to be okay
 				var elem = document.getElementById('fallback');
