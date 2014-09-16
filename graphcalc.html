@@ -45,7 +45,10 @@
 		var userData = {
 			render: null,
 			translate: {x:0,y:0,z:-1},
+			scale: {x:1.0,y:1.0},
 			dragPrevious: {x:0,y:0},
+			dragStartMatrix: null,
+			ortho: {left:-1,right:1,top:-1,bottom:1},
 		};
 
 		var app = PhiloGL('graphcalc',{
@@ -71,12 +74,27 @@
 				    canvas  = app.canvas,
 				    camera  = app.camera,
 				    lineLinearPlotShaderProgram = app.program.lineLinearPlot,
-				    lineShaderProgram     = app.program.line;
+				    lineShaderProgram           = app.program.line;
 
 				var onResize = function(){
+					//Canvas element
 					canvas.width  = window.innerWidth;
 					canvas.height = window.innerHeight;
+
+					//Viewport
 					gl.viewport(0,0,canvas.width,canvas.height);
+
+					//Orthographic projection (Keep aspect ratio and using unit lengths)
+					userData.ortho.left   = 0;
+					userData.ortho.right  = canvas.width/canvas.height;
+					userData.ortho.top    = 0;
+					userData.ortho.bottom = 1;
+					camera.projection.ortho(userData.ortho.left,userData.ortho.right,userData.ortho.top,userData.ortho.bottom,0.1,10);
+
+					lineLinearPlotShaderProgram.use();
+					lineLinearPlotShaderProgram.setUniform('projectionMatrix',camera.projection);
+					lineShaderProgram.use();
+					lineShaderProgram.setUniform('projectionMatrix',camera.projection);
 				};
 
 				onResize();
@@ -84,16 +102,19 @@
 
 				//Generate vertices for the plots from equations (Contains values in 2d x,y pairs)
 				var plots = [];
-				plots.push({data:[]});
-				for(var x=-5.0; x<5.0; x+=0.5){
-					plots[0].data.push(x);
-					plots[0].data.push(Math.sin(x));
-				}
-				plots.push({data:[]});
-				for(var x=-5.0; x<5.0; x+=0.5){
-					plots[1].data.push(x);
-					plots[1].data.push(x*x);
-				}
+				var generatePlots = function(){
+					plots.push({data:[]});
+					for(var x=-50.0; x<50.0; x+=0.5){
+						plots[0].data.push(x);
+						plots[0].data.push(Math.sin(x));
+					}
+					plots.push({data:[]});
+					for(var x=-50.0; x<50.0; x+=0.5){
+						plots[1].data.push(x);
+						plots[1].data.push(x*x);
+					}
+				};
+				generatePlots();
 
 				//Prepare buffers for the plots
 				var plotBuffers = {};
@@ -138,20 +159,19 @@
 
 					//Transformations (zoom and movement)
 					camera.view.$translate(userData.translate.x,userData.translate.y,userData.translate.z);
+					camera.view.$scale(userData.scale.x,userData.scale.y,1);
 
 					//Draw plots
 					lineLinearPlotShaderProgram.use();
 					lineLinearPlotShaderProgram.setUniform('modelViewMatrix',camera.view);
-					lineLinearPlotShaderProgram.setUniform('projectionMatrix',camera.projection);
 					for(var i=plots.length-1; i>=0; i--){
 						lineLinearPlotShaderProgram.setBuffer('lineLinearPlot'+i);
-						gl.drawArrays(gl.LINE_STRIP,0,plots[i].data.length/2);
+						gl.drawArrays(gl.LINE_STRIP,0,plots[i].data.length/plotBuffers['lineLinearPlot'+i].size);
 					}
 
 					//Draw lines
 					lineShaderProgram.use();
 					lineShaderProgram.setUniform('modelViewMatrix',camera.view);
-					lineShaderProgram.setUniform('projectionMatrix',camera.projection);
 					lineShaderProgram.setBuffer('lines');
 					gl.drawArrays(gl.LINES,0,8);
 				};
@@ -171,29 +191,38 @@
 				disableContextMenu: true,
 				//Movement initialization
 				onDragStart: function(event){
-					userData.dragPrevious = {
-						x: event.x,
-						y: event.y
-					};
+					userData.dragStartMatrix = this.camera.projection.mulMat4(this.camera.view);
+
+					//Project event coordinates by transforming
+					var eventCoord = userData.dragStartMatrix.mulVec3(new PhiloGL.Vec3(
+						(event.x/this.canvas.width)*(userData.ortho.right-userData.ortho.left),
+						(event.y/this.canvas.height)*(userData.ortho.bottom-userData.ortho.top)
+						,0
+					));
+					userData.dragPrevious = {x: eventCoord.x,y: eventCoord.y};
+					console.log(eventCoord.x,eventCoord.y)
 				},
 				//Movement
 				onDragMove: function(event){
-					userData.translate.x+=(event.x-userData.dragPrevious.x)/50;
-					userData.translate.y+=(event.y-userData.dragPrevious.y)/50;
+					//Project event coordinates by transforming
+					var eventCoord = userData.dragStartMatrix.mulVec3(new PhiloGL.Vec3(
+						(event.x/this.canvas.width)*(userData.ortho.right-userData.ortho.left),
+						(event.y/this.canvas.height)*(userData.ortho.bottom-userData.ortho.top)
+						,0
+					));
 
-					userData.dragPrevious = {
-						x: event.x,
-						y: event.y
-					};
+					userData.translate.x+=eventCoord.x-userData.dragPrevious.x;
+					userData.translate.y+=eventCoord.y-userData.dragPrevious.y;
+
+					userData.dragPrevious = {x: eventCoord.x,y: eventCoord.y};
 					userData.render();
 				},
 				//Zoom
 				onMouseWheel: function(event){
-					var newZ = userData.translate.z+event.wheel;
-					if(newZ<0){
-						userData.translate.z = newZ;
-						userData.render();
-					}
+					var magnitude = event.wheel>0? 2.0 : 0.5;
+					var newScale  = {x: userData.scale.x*magnitude, y: userData.scale.y*magnitude};
+					userData.scale = newScale;
+					userData.render();
 				}
 			}
 		});
